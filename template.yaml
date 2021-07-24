@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+Description: yellcop CF template
+
+Resources:
+  # SlackToken:
+  #   Type: AWS::SSM::Parameter
+  #   Properties:
+  #     Description: yellcop slack token
+  #     Type: String
+  #     Name: /yellcop/tokens/slack/verification-token
+  # Warnings:
+  #   Type: AWS::SSM::Parameter
+  #   Properties:
+  #     Description: yellcop warnings
+  #     Type: String
+  #     Name: /yellcop/warnings
+  #     Value: 
+  # Failures:
+  #   Type: AWS::SSM::Parameter
+  #   Properties:
+  #     Description: yellcop failures
+  #     Type: String
+  #     Name: /yellcop/failures
+  #     Value: 
+
+  Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: A lambda that audits the sig-yelling channel
+      Runtime: go1.x
+      Handler: yellcop
+      CodeUri: yellcop.zip
+      Tracing: Active
+      Timeout: 30
+      ReservedConcurrentExecutions: 1
+      Role:
+        Fn::GetAtt: FunctionRole.Arn
+      Events:
+        Status:
+          Type: Api
+          Properties:
+            Path: /status
+            Method: GET
+        DefaultPost:
+          Type: Api
+          Properties:
+            Path: /
+            Method: POST
+
+  FunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ['lambda.amazonaws.com']
+            Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+        - PolicyName: yellcop-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameters
+                  - ssm:GetParameter
+                  - ssm:DescribeParameters
+                  - ssm:PutParameter
+                Resource: '*'
+
+  YellcopAPIParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /yellcop/endpoint
+      Description: YELLCOP Prod API Gateway Endpoint
+      Type: String
+      Value:
+        Fn::Sub: 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/'
+
+Outputs:
+  YellcopAPI:
+    Description: YELLCOP Prod API Gateway Endpoint
+    Value:
+      Fn::Sub: 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/'
+
+  Function:
+    Description: YELLCOP ARN
+    Value:
+      Fn::GetAtt: Function.Arn
+
+  FunctionIamRole:
+    Description: YELLCOP IAM Role
+    Value:
+      Fn::GetAtt: FunctionRole.Arn

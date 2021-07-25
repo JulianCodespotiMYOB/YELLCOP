@@ -47,6 +47,9 @@ Resources:
           Properties:
             Path: /
             Method: POST
+      Environment:
+        Variables:
+          THRESHOLD: 2
 
   FunctionRole:
     Type: AWS::IAM::Role

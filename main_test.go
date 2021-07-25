@@ -35,8 +35,9 @@ func TestCheckMessage(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			h := &handler{
-				warnings: []string{warn},
-				failures: []string{fail},
+				threshold: 1,
+				warnings:  []string{warn},
+				failures:  []string{fail},
 			}
 			actual, kick := h.checkMessage(tt.msg)
 			if kick != tt.kick {

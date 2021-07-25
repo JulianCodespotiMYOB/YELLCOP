@@ -7,6 +7,8 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -21,10 +23,11 @@ import (
 )
 
 type handler struct {
-	verify   string
-	warnings []string
-	failures []string
-	api      *slack.Client
+	verify    string
+	threshold int
+	warnings  []string
+	failures  []string
+	api       *slack.Client
 }
 
 func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
@@ -83,10 +86,10 @@ func (h *handler) checkMessage(msg string) (string, bool) {
 			count++
 		}
 	}
-	if count == 1 {
-		return h.warnings[rand.Intn(len(h.warnings))], false
-	} else if count > 1 {
+	if count > h.threshold {
 		return h.failures[rand.Intn(len(h.failures))], true
+	} else if count > 0 {
+		return h.warnings[rand.Intn(len(h.warnings))], false
 	}
 	return "", false
 }
@@ -143,7 +146,9 @@ func ssmGet(key string, decrypt bool) (string, error) {
 
 func main() {
 	var err error
-	h := &handler{}
+	h := &handler{
+		threshold: 2,
+	}
 	h.verify, err = ssmGet("/yellcop/tokens/slack/verification-token", true)
 	if err != nil {
 		log.Fatalf("failed to fetch verify: %s", err)
@@ -168,6 +173,14 @@ func main() {
 		log.Fatalf("failed to fetch token: %s", err)
 	}
 	h.api = slack.New(token)
+
+	if threshold := os.Getenv("THRESHOLD"); threshold != "" {
+		i, err := strconv.ParseInt(threshold, 10, 8)
+		if err != nil {
+			log.Printf("failed to parse threshold: %s", err)
+		}
+		h.threshold = int(i)
+	}
 
 	rand.Seed(time.Now().UnixNano())
 

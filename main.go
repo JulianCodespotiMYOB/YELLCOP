@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"log"
 	"math/rand"
 	"net/http"
@@ -127,6 +128,7 @@ func isYell(s string) bool {
 	if strings.HasPrefix(s, ":") {
 		return true
 	}
+	s = html.UnescapeString(s)
 	return strings.ToUpper(s) == s
 }
 

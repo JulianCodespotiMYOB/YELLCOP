@@ -79,14 +79,13 @@ func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
 		switch m := event.InnerEvent.Data.(type) {
 		case *slackevents.MessageEvent:
 			if m.ChannelType == "channel" {
-				log.Printf("checking msg from (%s): %q", m.User, m.Text)
 				out, kick := h.checkMessage(m.Text)
 				if kick {
 					err := h.userAPI.KickUserFromConversation(m.Channel, m.User)
 					if err != nil {
 						log.Printf("error: %s", err)
 					} else {
-						log.Printf("kicking: %s", m.User)
+						log.Printf("kicking: %s for %q", m.User, m.Text)
 					}
 				}
 				if out != "" {

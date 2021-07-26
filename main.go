@@ -21,12 +21,30 @@ import (
 	"github.com/slack-go/slack/slackevents"
 )
 
+var skipMessages = []string{
+	"departure cancelled",
+	"departure removal report",
+	"has joined the channel",
+	"has joined the group",
+	"has left the channel",
+	"renamed the channel from",
+	"set the channel purpose",
+	"set the channel topic",
+	"set the channel's purpose",
+	"set the channel's topic",
+	"set up a reminder",
+	"started a call",
+	"this content can't be displayed",
+	"this message was deleted",
+}
+
 type handler struct {
 	verify    string
 	threshold int
 	warnings  []string
 	failures  []string
-	api       *slack.Client
+	botAPI    *slack.Client
+	userAPI   *slack.Client
 }
 
 func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
@@ -60,9 +78,10 @@ func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
 		switch m := event.InnerEvent.Data.(type) {
 		case *slackevents.MessageEvent:
 			if m.ChannelType == "channel" {
+				log.Printf("checking msg from (%s): %q", m.User, m.Text)
 				out, kick := h.checkMessage(m.Text)
 				if kick {
-					err := h.api.KickUserFromConversation(m.Channel, m.User)
+					err := h.userAPI.KickUserFromConversation(m.Channel, m.User)
 					if err != nil {
 						log.Printf("error: %s", err)
 					} else {
@@ -70,11 +89,11 @@ func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
 					}
 				}
 				if out != "" {
-					h.api.PostMessage(m.Channel, slack.MsgOptionText(strings.ToUpper(strings.ReplaceAll(out, "{user}", m.User)), false))
+					h.botAPI.PostMessage(m.Channel, slack.MsgOptionText(strings.ToUpper(strings.ReplaceAll(out, "{user}", m.User)), false))
 				}
 			}
 		case *slackevents.MemberJoinedChannelEvent:
-			//log.Printf("member joined")
+			//log.Printf("member joined: %q", m.User)
 		case *slackevents.AppMentionEvent:
 		}
 	default:
@@ -84,6 +103,12 @@ func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
 }
 
 func (h *handler) checkMessage(msg string) (string, bool) {
+	// Skip slack messages
+	for _, m := range skipMessages {
+		if strings.Contains(msg, m) {
+			return "", false
+		}
+	}
 	var count int
 	for _, word := range strings.Fields(msg) {
 		if !isYell(word) {
@@ -170,11 +195,17 @@ func main() {
 	}
 	h.failures = strings.Split(failures, "|")
 
-	token, err := ssmGet("/yellcop/tokens/slack/bot-token", true)
+	botToken, err := ssmGet("/yellcop/tokens/slack/bot-token", true)
 	if err != nil {
-		log.Fatalf("failed to fetch token: %s", err)
+		log.Fatalf("failed to fetch bot token: %s", err)
 	}
-	h.api = slack.New(token)
+	h.botAPI = slack.New(botToken)
+
+	userToken, err := ssmGet("/yellcop/tokens/slack/user-token", true)
+	if err != nil {
+		log.Fatalf("failed to fetch user token: %s", err)
+	}
+	h.userAPI = slack.New(userToken)
 
 	if threshold := os.Getenv("THRESHOLD"); threshold != "" {
 		i, err := strconv.ParseInt(threshold, 10, 8)

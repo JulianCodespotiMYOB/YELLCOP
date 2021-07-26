@@ -35,6 +35,11 @@ func TestCheckMessage(t *testing.T) {
 			fail,
 			true,
 		},
+		"fromSlack1": {
+			"felix has joined the channel",
+			"",
+			false,
+		},
 	}
 
 	for name, tt := range tests {

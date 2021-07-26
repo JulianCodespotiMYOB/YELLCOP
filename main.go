@@ -31,6 +31,7 @@ type handler struct {
 }
 
 func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
+	rand.Seed(time.Now().UnixNano())
 	var req events.APIGatewayProxyRequest
 	if err := json.Unmarshal(b, &req); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal payload: %w", err)
@@ -62,8 +63,12 @@ func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
 			if m.ChannelType == "channel" {
 				out, kick := h.checkMessage(m.Text)
 				if kick {
-					h.api.KickUserFromConversation(m.Channel, m.User)
-					log.Printf("kicking: %s", m.User)
+					err := h.api.KickUserFromConversation(m.Channel, m.User)
+					if err != nil {
+						log.Printf("error: %s", err)
+					} else {
+						log.Printf("kicking: %s", m.User)
+					}
 				}
 				if out != "" {
 					h.api.PostMessage(m.Channel, slack.MsgOptionText(strings.ToUpper(strings.ReplaceAll(out, "{user}", m.User)), false))
@@ -95,6 +100,9 @@ func (h *handler) checkMessage(msg string) (string, bool) {
 }
 
 func isYell(s string) bool {
+	if strings.HasPrefix(s, ":") {
+		return true
+	}
 	for _, r := range s {
 		if !unicode.IsUpper(r) && unicode.IsLetter(r) {
 			return false
@@ -164,7 +172,7 @@ func main() {
 	failures, err := ssmGet("/yellcop/failures", false)
 	if err != nil {
 		log.Printf("failed to fetch failures: %s", err)
-		failures = "KICKING <@{user}>!"
+		failures = "<@{user}> HAS CROSSED THE LINE, PULL THE LEVER!"
 	}
 	h.failures = strings.Split(failures, "|")
 
@@ -181,8 +189,6 @@ func main() {
 		}
 		h.threshold = int(i)
 	}
-
-	rand.Seed(time.Now().UnixNano())
 
 	lambda.StartHandler(h)
 }

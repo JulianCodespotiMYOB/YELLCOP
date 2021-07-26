@@ -20,6 +20,11 @@ func TestCheckMessage(t *testing.T) {
 			"",
 			false,
 		},
+		"valid3": {
+			">ELL <ELL",
+			"",
+			false,
+		},
 		"quiet1": {
 			"talk",
 			warn,

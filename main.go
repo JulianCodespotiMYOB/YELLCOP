@@ -127,6 +127,9 @@ func isYell(s string) bool {
 	if strings.HasPrefix(s, ":") {
 		return true
 	}
+	if strings.Contains(s, "http") {
+		return true
+	}
 	s = html.UnescapeString(s)
 	return strings.ToUpper(s) == s
 }

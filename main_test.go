@@ -40,6 +40,11 @@ func TestCheckMessage(t *testing.T) {
 			"",
 			false,
 		},
+		"url": {
+			"THIS HAS A http://example.com",
+			"",
+			false,
+		},
 	}
 
 	for name, tt := range tests {

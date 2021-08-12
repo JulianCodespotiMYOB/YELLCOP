@@ -33,7 +33,7 @@ $(BINARY): main.go go.mod
 	GOOS=linux go build -ldflags "-X main.version=$(VERSION)" -o $(BINARY)
 
 test:
-	go vet ./...
+	go vet
 	go test
 
 clean:

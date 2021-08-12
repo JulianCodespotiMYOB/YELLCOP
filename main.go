@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -49,7 +50,6 @@ type handler struct {
 }
 
 func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
-	rand.Seed(time.Now().UnixNano())
 	var req events.APIGatewayProxyRequest
 	if err := json.Unmarshal(b, &req); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal payload: %w", err)
@@ -127,11 +127,20 @@ func isYell(s string) bool {
 	if strings.HasPrefix(s, ":") {
 		return true
 	}
-	if strings.Contains(s, "http") {
+	if strings.HasPrefix(s, "http") {
 		return true
 	}
 	s = html.UnescapeString(s)
-	return strings.ToUpper(s) == s
+	if strings.ToUpper(s) == s {
+		return true
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < utf8.RuneSelf && ('a' <= c && c <= 'z') {
+			return false
+		}
+	}
+	return true
 }
 
 // asAGPR simplifies returning an APIGatewayProxyResponse inline.
@@ -220,4 +229,8 @@ func main() {
 	}
 
 	lambda.StartHandler(h)
+}
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
 }

@@ -45,6 +45,11 @@ func TestCheckMessage(t *testing.T) {
 			"",
 			false,
 		},
+		"tricky": {
+			"this.is.all.one.word",
+			"WARN",
+			false,
+		},
 	}
 
 	for name, tt := range tests {

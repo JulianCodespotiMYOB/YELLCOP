@@ -126,7 +126,7 @@ func isYell(s string) bool {
 	if strings.HasPrefix(s, ":") {
 		return true
 	}
-	if strings.HasPrefix(s, "http") {
+	if strings.Contains(s, "http") {
 		return true
 	}
 	s = html.UnescapeString(s)

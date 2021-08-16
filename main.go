@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -131,16 +130,7 @@ func isYell(s string) bool {
 		return true
 	}
 	s = html.UnescapeString(s)
-	if strings.ToUpper(s) == s {
-		return true
-	}
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c < utf8.RuneSelf && ('a' <= c && c <= 'z') {
-			return false
-		}
-	}
-	return true
+	return strings.ToUpper(s) == s
 }
 
 // asAGPR simplifies returning an APIGatewayProxyResponse inline.

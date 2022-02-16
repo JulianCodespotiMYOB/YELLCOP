@@ -50,6 +50,11 @@ func TestCheckMessage(t *testing.T) {
 			"WARN",
 			false,
 		},
+		"emoji1": {
+			"THIS HAS AN :emoji: AND ANOTHER,:emoji: THAT IS STUCK ",
+			"",
+			false,
+		},
 	}
 
 	for name, tt := range tests {

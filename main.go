@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +39,10 @@ var skipMessages = []string{
 	"this content can't be displayed",
 	"this message was deleted",
 }
+
+var (
+	emojiRE = regexp.MustCompile(`\:[^\s]+\:`)
+)
 
 type handler struct {
 	verify    string
@@ -123,9 +128,8 @@ func (h *handler) checkMessage(msg string) (string, bool) {
 }
 
 func isYell(s string) bool {
-	if strings.HasPrefix(s, ":") {
-		return true
-	}
+	// Remove emojis first
+	s = emojiRE.ReplaceAllString(s, "")
 	if strings.Contains(s, "http") {
 		return true
 	}

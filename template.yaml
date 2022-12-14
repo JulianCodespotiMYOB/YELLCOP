@@ -3,27 +3,6 @@ Transform: AWS::Serverless-2016-10-31
 Description: yellcop CF template
 
 Resources:
-  # SlackToken:
-  #   Type: AWS::SSM::Parameter
-  #   Properties:
-  #     Description: yellcop slack token
-  #     Type: String
-  #     Name: /yellcop/tokens/slack/verification-token
-  # Warnings:
-  #   Type: AWS::SSM::Parameter
-  #   Properties:
-  #     Description: yellcop warnings
-  #     Type: String
-  #     Name: /yellcop/warnings
-  #     Value: 
-  # Failures:
-  #   Type: AWS::SSM::Parameter
-  #   Properties:
-  #     Description: yellcop failures
-  #     Type: String
-  #     Name: /yellcop/failures
-  #     Value: 
-
   Function:
     Type: AWS::Serverless::Function
     Properties:
@@ -32,24 +11,23 @@ Resources:
       Handler: yellcop
       CodeUri: yellcop.zip
       Tracing: Active
-      Timeout: 30
+      Timeout: 10
+      FunctionUrlConfig:
+        AuthType: NONE
+        # Cors:
+        #   AllowMethods:
+        #     - POST
+        #   AllowHeaders:
+        #     - 
       ReservedConcurrentExecutions: 1
       Role:
         Fn::GetAtt: FunctionRole.Arn
-      Events:
-        Status:
-          Type: Api
-          Properties:
-            Path: /status
-            Method: GET
-        DefaultPost:
-          Type: Api
-          Properties:
-            Path: /
-            Method: POST
-      Environment:
-        Variables:
-          THRESHOLD: 2
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${Function}"
+      RetentionInDays: 7
 
   FunctionRole:
     Type: AWS::IAM::Role
@@ -82,22 +60,35 @@ Resources:
                   - ssm:PutParameter
                 Resource: '*'
 
-  YellcopAPIParam:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: /yellcop/endpoint
-      Description: YELLCOP Prod API Gateway Endpoint
-      Type: String
-      Value:
-        Fn::Sub: 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/'
+  # SlackVerificationToken:
+  #   Type: AWS::SSM::Parameter
+  #   Properties:
+  #     Description: yellcop slack token
+  #     Type: String
+  #     Name: /yellcop/tokens/slack/verification-token
+  #     Value:
+  # WarningsExtra:
+  #   Type: AWS::SSM::Parameter
+  #   Properties:
+  #     Description: yellcop warnings
+  #     Type: String
+  #     Name: /yellcop/warnings
+  #     Value:
+  # FailuresExtra:
+  #   Type: AWS::SSM::Parameter
+  #   Properties:
+  #     Description: yellcop failures
+  #     Type: String
+  #     Name: /yellcop/failures
+  #     Value:
 
 Outputs:
-  YellcopAPI:
-    Description: YELLCOP Prod API Gateway Endpoint
+  FunctionUrl:
+    Description: YELLCOP Endpoint
     Value:
-      Fn::Sub: 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/'
+      Fn::GetAtt: FunctionUrl.FunctionUrl
 
-  Function:
+  FunctionArn:
     Description: YELLCOP ARN
     Value:
       Fn::GetAtt: Function.Arn

@@ -1,4 +1,3 @@
-
 VERSION		!= git describe --tags --always
 PROJECT_SCOPE	= yellcop
 PROJECT_NAME	= lambda
@@ -6,6 +5,8 @@ AWS_REGION	= ap-southeast-2
 STACK_NAME	= $(PROJECT_SCOPE)-$(PROJECT_NAME)
 ENVIRONMENT	= lab
 BINARY		= yellcop
+
+build: $(BINARY)
 
 deploy: $(BINARY).zip package.yaml
 	aws cloudformation deploy \
@@ -30,12 +31,12 @@ $(BINARY).zip: $(BINARY)
 	zip $(BINARY).zip $(BINARY)
 
 $(BINARY): main.go go.mod
-	GOOS=linux go build -ldflags "-X main.version=$(VERSION)" -o $(BINARY)
+	GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=$(VERSION)" -o $(BINARY)
 
 test:
 	go vet
 	go test
 
 clean:
-	rm $(BINARY)
-	rm $(BINARY).zip
+	rm -f $(BINARY)
+	rm -f $(BINARY).zip

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +41,30 @@ var skipMessages = []string{
 	"this message was deleted",
 }
 
+var warningMessages = []string{
+	"warning for <@{user}>",
+	"careful <@{user}>!",
+	"use your shift key <@{user}>, its not that hard",
+	"only caps <@{user}>!",
+	"i can't hear you <@{user}>!!",
+	"this is sig-yelling <@{user}>, that ain't yelling!",
+}
+
+var failureMessages = []string{
+	"kicking <@{user}>",
+	"<@{user}> has crossed the line, pull the lever!",
+	"by the power vested in me, i hereby kick <@{user}>",
+	"<@{user}> is experiencing caps difficulties",
+	"<@{user}> do no pass go, do not collect $200",
+	"oops, I just kicked <@{user}>",
+}
+
+var inactiveMessages = []string{
+	"<@{user}> has fallen asleep, kicking",
+	"lurker detected, kicking <@{user}>",
+	"are you still around <@{user}>? No? Bye, bye",
+}
+
 var (
 	emojiRE = regexp.MustCompile(`\:[^:\s]+\:`)
 	urlRE   = regexp.MustCompile(`https?://\w+`)
@@ -58,11 +83,13 @@ type handler struct {
 	// Number of words to only get a warning
 	threshold int
 
-	// Warning messages
-	warnings []string
+	// Period of inactivity before booting
+	inactiveTime time.Duration
 
-	// Kick messages
-	failures []string
+	// Messages
+	msgWarnings []string
+	msgKick     []string
+	msgInactive []string
 }
 
 func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
@@ -97,33 +124,19 @@ func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
 			h.log.Debug(m.Text, zap.String("type", m.ChannelType), zap.String("user", m.User))
 			if m.ChannelType == "channel" {
 				out, kick := h.checkMessage(m.Text)
-				if kick {
-					err := h.userAPI.KickUserFromConversation(m.Channel, m.User)
-					if err != nil {
-						h.log.Error("failed to kick", zap.Error(err))
-					} else {
-						h.log.Info("kicking", zap.String("user", m.User), zap.String("message", m.Text))
-					}
+				switch {
+				case kick:
+					h.kickUser(m.Channel, m.User, out)
+				case out != "":
+					h.postMessage(m.Channel, m.User, out)
 				}
-				if out != "" {
-					if _, _, err := h.botAPI.PostMessage(
-						m.Channel,
-						slack.MsgOptionText(strings.ToUpper(strings.ReplaceAll(out, "{user}", m.User)), false),
-					); err != nil {
-						h.log.Error("failed to post", zap.Error(err))
-					}
+				if rand.Intn(23) == time.Now().Hour() {
+					h.checkHistory(m.Channel)
 				}
 			}
 		case *slackevents.MemberJoinedChannelEvent:
 			h.log.Debug("member joined", zap.String("user", m.User))
-			if _, _, err := h.botAPI.PostMessage(
-				m.Channel,
-				slack.MsgOptionText(strings.ToUpper(strings.ReplaceAll(welcomeMsg, "{user}", m.User)), false),
-				slack.MsgOptionPostEphemeral(m.User),
-			); err != nil {
-				h.log.Error("failed to post welcome message", zap.Error(err))
-			}
-		case *slackevents.AppMentionEvent:
+			h.postMessage(m.Channel, m.User, welcomeMsg, slack.MsgOptionPostEphemeral(m.User))
 		}
 	default:
 		return asLFUR(fmt.Sprintf("missing type implementation: %s", event.Type), 501)
@@ -145,9 +158,9 @@ func (h *handler) checkMessage(msg string) (string, bool) {
 		}
 	}
 	if count > h.threshold {
-		return h.failures[rand.Intn(len(h.failures))], true
+		return randomMessage(h.msgKick), true
 	} else if count > 0 {
-		return h.warnings[rand.Intn(len(h.warnings))], false
+		return randomMessage(h.msgWarnings), false
 	}
 	return "", false
 }
@@ -160,6 +173,72 @@ func isYell(s string) bool {
 	}
 	s = html.UnescapeString(s)
 	return strings.ToUpper(s) == s
+}
+
+func (h *handler) kickUser(chID, uID, msg string) {
+	h.log.Info("kicking", zap.String("user", uID), zap.String("message", msg))
+	if err := h.userAPI.KickUserFromConversation(chID, uID); err != nil {
+		h.log.Error("failed to kick", zap.Error(err))
+		return
+	}
+	h.postMessage(chID, uID, msg)
+}
+
+func (h *handler) postMessage(chID, uID, msg string, opts ...slack.MsgOption) {
+	opts = append(opts, slack.MsgOptionText(strings.ToUpper(strings.ReplaceAll(msg, "{user}", uID)), false))
+	if _, _, err := h.botAPI.PostMessage(chID, opts...); err != nil {
+		h.log.Error("failed to post", zap.Error(err))
+	}
+}
+
+func (h *handler) checkHistory(chID string) (err error) {
+	startTime := time.Now().Add(-1 * h.inactiveTime)
+
+	activeUsers := make(map[string]int)
+
+	var cursor string
+	hasMore := true
+	for hasMore {
+		resp, err := h.botAPI.GetConversationHistory(&slack.GetConversationHistoryParameters{
+			ChannelID: chID,
+			Cursor:    cursor,
+			Oldest:    strconv.Itoa(int(startTime.Unix())),
+		})
+		if err != nil {
+			return err
+		}
+		hasMore = resp.HasMore
+		if resp.HasMore {
+			cursor = resp.ResponseMetaData.NextCursor
+		}
+		for _, m := range resp.Messages {
+			activeUsers[m.User]++
+		}
+	}
+	h.log.Info("activeUsers fetched", zap.String("period", h.inactiveTime.String()), zap.Int("count", len(activeUsers)))
+
+	var allUsers []string
+	hasMore = true
+	cursor = ""
+	for hasMore {
+		var members []string
+		members, cursor, err = h.botAPI.GetUsersInConversation(&slack.GetUsersInConversationParameters{
+			ChannelID: chID,
+			Cursor:    cursor,
+		})
+		hasMore = (cursor != "")
+		allUsers = append(allUsers, members...)
+	}
+
+	for _, u := range allUsers {
+		c, active := activeUsers[u]
+		if !active || c == 0 {
+			h.kickUser(chID, u, randomMessage(h.msgInactive))
+			// TODO just one at a time??
+			return
+		}
+	}
+	return nil
 }
 
 // asLFUR simplifies returning an LambdaFunctionURLResponse inline.
@@ -203,6 +282,10 @@ func ssmGet(key string, decrypt bool) (string, error) {
 	return *param.Parameter.Value, nil
 }
 
+func randomMessage(haystack []string) string {
+	return haystack[rand.Intn(len(haystack))]
+}
+
 func main() {
 	var err error
 
@@ -214,8 +297,15 @@ func main() {
 	logger, _ := logCfg.Build()
 
 	h := &handler{
-		threshold: 1,
-		log:       logger,
+		threshold:    1,
+		inactiveTime: 30 * 24 * time.Hour,
+		log:          logger,
+	}
+
+	if s := os.Getenv("INACTIVITY"); s != "" {
+		if d, err := time.ParseDuration(s); err == nil {
+			h.inactiveTime = d
+		}
 	}
 
 	h.verify, err = ssmGet("/yellcop/tokens/slack/verification-token", true)
@@ -235,28 +325,19 @@ func main() {
 	}
 	h.userAPI = slack.New(userToken)
 
-	h.warnings = []string{
-		"warning for <@{user}>",
-		"careful <@{user}>!",
-		"use your shift key <@{user}>, its not that hard",
-		"only caps <@{user}>!",
-		"i can't hear you <@{user}>!!",
-		"this is sig-yelling <@{user}>, that ain't yelling!",
-	}
+	h.msgWarnings = warningMessages
 	if w, err := ssmGet("/yellcop/warnings", false); err == nil {
-		h.warnings = append(h.warnings, strings.Split(w, "|")...)
+		h.msgWarnings = append(h.msgWarnings, strings.Split(w, "|")...)
 	}
 
-	h.failures = []string{
-		"kicking <@{user}>",
-		"<@{user}> has crossed the line, pull the lever!",
-		"by the power vested in me, i hereby kick <@{user}>",
-		"<@{user}> is experiencing caps difficulties",
-		"<@{user}> do no pass go, do not collect $200",
-		"oops, I just kicked <@{user}>",
-	}
+	h.msgKick = failureMessages
 	if f, err := ssmGet("/yellcop/failures", false); err == nil {
-		h.failures = append(h.failures, strings.Split(f, "|")...)
+		h.msgKick = append(h.msgKick, strings.Split(f, "|")...)
+	}
+
+	h.msgInactive = inactiveMessages
+	if f, err := ssmGet("/yellcop/inactive", false); err == nil {
+		h.msgInactive = append(h.msgInactive, strings.Split(f, "|")...)
 	}
 
 	lambda.StartHandler(h)

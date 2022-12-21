@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -86,6 +85,8 @@ type handler struct {
 	// Period of inactivity before booting
 	inactiveTime time.Duration
 
+	chUsers []string
+
 	// Messages
 	msgWarnings []string
 	msgKick     []string
@@ -124,10 +125,10 @@ func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
 			h.log.Debug(m.Text, zap.String("type", m.ChannelType), zap.String("user", m.User))
 			if m.ChannelType == "channel" {
 				out, kick := h.checkMessage(m.Text)
-				switch {
-				case kick:
+				if kick {
 					h.kickUser(m.Channel, m.User, out)
-				case out != "":
+				}
+				if out != "" {
 					h.postMessage(m.Channel, m.User, out)
 				}
 				if rand.Intn(23) == time.Now().Hour() {
@@ -135,7 +136,7 @@ func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
 				}
 			}
 		case *slackevents.MemberJoinedChannelEvent:
-			h.log.Debug("member joined", zap.String("user", m.User))
+			h.log.Info("member joined", zap.String("user", m.User))
 			h.postMessage(m.Channel, m.User, welcomeMsg, slack.MsgOptionPostEphemeral(m.User))
 		}
 	default:
@@ -190,55 +191,66 @@ func (h *handler) postMessage(chID, uID, msg string, opts ...slack.MsgOption) {
 		h.log.Error("failed to post", zap.Error(err))
 	}
 }
-
-func (h *handler) checkHistory(chID string) (err error) {
-	startTime := time.Now().Add(-1 * h.inactiveTime)
-
-	activeUsers := make(map[string]int)
-
-	var cursor string
+func (h *handler) fetchChannelUsers(chID string) {
+	var err error
+	h.chUsers = make([]string, 0)
 	hasMore := true
-	for hasMore {
-		resp, err := h.botAPI.GetConversationHistory(&slack.GetConversationHistoryParameters{
-			ChannelID: chID,
-			Cursor:    cursor,
-			Oldest:    strconv.Itoa(int(startTime.Unix())),
-		})
-		if err != nil {
-			return err
-		}
-		hasMore = resp.HasMore
-		if resp.HasMore {
-			cursor = resp.ResponseMetaData.NextCursor
-		}
-		for _, m := range resp.Messages {
-			activeUsers[m.User]++
-		}
-	}
-	h.log.Info("activeUsers fetched", zap.String("period", h.inactiveTime.String()), zap.Int("count", len(activeUsers)))
-
-	var allUsers []string
-	hasMore = true
-	cursor = ""
+	cursor := ""
 	for hasMore {
 		var members []string
 		members, cursor, err = h.botAPI.GetUsersInConversation(&slack.GetUsersInConversationParameters{
 			ChannelID: chID,
 			Cursor:    cursor,
+			Limit:     200,
 		})
-		hasMore = (cursor != "")
-		allUsers = append(allUsers, members...)
-	}
-
-	for _, u := range allUsers {
-		c, active := activeUsers[u]
-		if !active || c == 0 {
-			h.kickUser(chID, u, randomMessage(h.msgInactive))
-			// TODO just one at a time??
+		if err != nil {
+			h.log.Error("failed to get users", zap.Error(err))
 			return
 		}
+		hasMore = (cursor != "")
+		h.chUsers = append(h.chUsers, members...)
 	}
-	return nil
+
+	h.log.Info("channel users fetched", zap.Int("count", len(h.chUsers)))
+}
+
+func (h *handler) checkHistory(chID string) {
+	var err error
+	startTime := time.Now().Add(-1 * h.inactiveTime)
+
+	if len(h.chUsers) == 0 {
+		h.fetchChannelUsers(chID)
+	}
+
+	// Select a victim at random
+	rand.Shuffle(len(h.chUsers), func(i, j int) {
+		h.chUsers[i], h.chUsers[j] = h.chUsers[j], h.chUsers[i]
+	})
+	uID := h.chUsers[0]
+	info, err := h.botAPI.GetUserInfo(uID)
+	if err != nil {
+		h.log.Error("failed to get user info", zap.Error(err))
+		return
+	}
+
+	if info.IsBot {
+		h.log.Info("ignoring history for bot")
+		return
+	}
+
+	// Count their messages since the inactivity time
+	query := fmt.Sprintf("from:<@%s> in:%s after:%s", uID, chID, startTime.Format(time.RFC3339))
+	resp, err := h.userAPI.SearchMessages(query, slack.NewSearchParameters())
+	if err != nil {
+		h.log.Error("failed to search messages", zap.Error(err))
+		return
+	}
+
+	h.log.Warn("checked history", zap.String("user", uID), zap.Int("count", resp.TotalCount), zap.String("query", query))
+	if resp.TotalCount == 0 {
+		//h.kickUser(chID, uID, randomMessage(h.msgInactive))
+	}
+	return
 }
 
 // asLFUR simplifies returning an LambdaFunctionURLResponse inline.

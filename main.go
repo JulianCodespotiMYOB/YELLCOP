@@ -127,8 +127,7 @@ func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
 				out, kick := h.checkMessage(m.Text)
 				if kick {
 					h.kickUser(m.Channel, m.User, out)
-				}
-				if out != "" {
+				} else if out != "" {
 					h.postMessage(m.Channel, m.User, out)
 				}
 				if rand.Intn(23) == time.Now().Hour() {

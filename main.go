@@ -248,6 +248,7 @@ func (h *handler) checkHistory(chID string) {
 	h.log.Warn("checked history", zap.String("user", uID), zap.Int("count", resp.TotalCount), zap.String("query", query))
 	if resp.TotalCount == 0 {
 		//h.kickUser(chID, uID, randomMessage(h.msgInactive))
+		h.postMessage(chID, uID, "non-yelling lurker detected, warning <@{user}>")
 	}
 	return
 }

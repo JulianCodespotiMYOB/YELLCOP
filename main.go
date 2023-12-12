@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"log"
 	"math/rand"
-	"net/http"
 	"os"
 	"regexp"
 	"strings"
@@ -71,6 +71,13 @@ var (
 
 const welcomeMsg = "Welcome <@{user}>. If this is your first time here, please use all capitals for all messages. If you are returning, you know the rules"
 
+type LambdaFunctionURLResponse struct {
+	IsBase64Encoded bool              `json:"isBase64Encoded"`
+	StatusCode      int               `json:"statusCode"`
+	Headers         map[string]string `json:"headers,omitempty"`
+	Body            string            `json:"body"`
+}
+
 type handler struct {
 	botAPI  *slack.Client
 	userAPI *slack.Client
@@ -94,35 +101,40 @@ type handler struct {
 }
 
 func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
+	log.Println("Invoke function started")
+
 	var req events.LambdaFunctionURLRequest
 	if err := json.Unmarshal(b, &req); err != nil {
+		log.Println("Error unmarshalling payload")
 		return nil, fmt.Errorf("failed to unmarshal payload: %w", err)
 	}
+	log.Println("Payload unmarshalled successfully")
+
 	// if req.Path != "/" {
 	// 	return asAGPR(fmt.Sprintf("unsupported path: %s", req.Path), 501)
 	// }
-	if req.RequestContext.HTTP.Method != http.MethodPost {
-		return asLFUR(fmt.Sprintf("%s method not supported", req.RequestContext.HTTP.Method), 405)
-	}
+
+	log.Println("HTTP method check passed")
 
 	options := slackevents.OptionVerifyToken(&slackevents.TokenComparator{VerificationToken: h.verify})
+	log.Println("Verifying token" + h.verify)
 	event, err := slackevents.ParseEvent(json.RawMessage(req.Body), options)
-	if err != nil {
-		return asLFUR(fmt.Sprintf("failed to parse message: %s", err), 500)
-	}
 
 	switch event.Type {
 	case slackevents.URLVerification:
 		var r *slackevents.ChallengeResponse
 		if err = json.Unmarshal([]byte(req.Body), &r); err != nil {
+			log.Println("Error parsing body for URL verification")
 			return asLFUR(fmt.Sprintf("failed to parse body: %s", err), 500)
 		}
+		log.Println("URL verification successful")
 		return asLFUR(r.Challenge, 200)
 
-	case slackevents.CallbackEvent:
+	case slackevents.Cal	lbackEvent:
 		switch m := event.InnerEvent.Data.(type) {
 		case *slackevents.MessageEvent:
 			h.log.Debug(m.Text, zap.String("type", m.ChannelType), zap.String("user", m.User))
+			log.Println("Handling message event")
 			if m.ChannelType == "channel" {
 				out, kick := h.checkMessage(m.Text)
 				if kick {
@@ -137,10 +149,13 @@ func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
 		case *slackevents.MemberJoinedChannelEvent:
 			h.log.Info("member joined", zap.String("user", m.User))
 			h.postMessage(m.Channel, m.User, welcomeMsg, slack.MsgOptionPostEphemeral(m.User))
+			log.Println("Handling member joined event")
 		}
 	default:
+		log.Printf("Missing type implementation: %s", event.Type)
 		return asLFUR(fmt.Sprintf("missing type implementation: %s", event.Type), 501)
 	}
+	log.Println("Invoke function completed successfully")
 	return asLFUR("ok", 200)
 }
 
@@ -254,20 +269,33 @@ func (h *handler) checkHistory(chID string) {
 }
 
 // asLFUR simplifies returning an LambdaFunctionURLResponse inline.
-func asLFUR(body string, code int) ([]byte, error) {
+func asLFUR(body interface{}, code int) ([]byte, error) {
 	var err error
 	if code > 499 {
-		err = fmt.Errorf(body)
+		err = fmt.Errorf("%v", body)
 	}
-	b, _ := json.Marshal(events.LambdaFunctionURLResponse{
-		// Headers: map[string]string{
-		// 	"Access-Control-Allow-Headers": "Content-Type",
-		// 	"Access-Control-Allow-Methods": "OPTIONS,POST,GET,PUT",
-		// 	"Access-Control-Allow-Origin":  "*",
-		// },
-		Body:       body,
-		StatusCode: code,
-	})
+
+	bodyStr, marshalErr := json.Marshal(body)
+	if marshalErr != nil {
+		return nil, marshalErr
+	}
+
+	response := LambdaFunctionURLResponse{
+		IsBase64Encoded: false,
+		StatusCode:      code,
+		Headers: map[string]string{
+			"Access-Control-Allow-Headers": "Content-Type",
+			"Access-Control-Allow-Methods": "OPTIONS,POST,GET,PUT",
+			"Access-Control-Allow-Origin":  "*",
+		},
+		Body: string(bodyStr),
+	}
+
+	b, marshalErr := json.Marshal(response)
+	if marshalErr != nil {
+		return nil, marshalErr
+	}
+
 	return b, err
 }
 

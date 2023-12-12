@@ -60,27 +60,41 @@ Resources:
                   - ssm:PutParameter
                 Resource: '*'
 
-  # SlackVerificationToken:
-  #   Type: AWS::SSM::Parameter
-  #   Properties:
-  #     Description: yellcop slack token
-  #     Type: String
-  #     Name: /yellcop/tokens/slack/verification-token
-  #     Value:
-  # WarningsExtra:
-  #   Type: AWS::SSM::Parameter
-  #   Properties:
-  #     Description: yellcop warnings
-  #     Type: String
-  #     Name: /yellcop/warnings
-  #     Value:
-  # FailuresExtra:
-  #   Type: AWS::SSM::Parameter
-  #   Properties:
-  #     Description: yellcop failures
-  #     Type: String
-  #     Name: /yellcop/failures
-  #     Value:
+SlackVerificationToken:
+  Type: AWS::SSM::Parameter
+  Properties:
+    Description: yellcop slack token
+    Type: String
+    Name: /yellcop/tokens/slack/verification-token
+    Value:
+WarningsExtra:
+  Type: AWS::SSM::Parameter
+  Properties:
+    Description: yellcop warnings
+    Type: String
+    Name: /yellcop/warnings
+    Value:
+FailuresExtra:
+  Type: AWS::SSM::Parameter
+  Properties:
+    Description: yellcop failures
+    Type: String
+    Name: /yellcop/failures
+    Value:
+
+Events:
+  MyApi:
+    Type: Api
+    Properties:
+      Path: /prood
+      Method: POST
+
+Events:
+  MyApi:
+    Type: Api
+    Properties:
+      Path: /
+      Method: POST
 
 Outputs:
   FunctionUrl:

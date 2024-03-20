@@ -172,9 +172,7 @@ func (h *handler) checkMessage(msg string) (string, bool) {
 			count++
 		}
 	}
-	if count > h.threshold {
-		return randomMessage(h.msgKick), true
-	} else if count > 0 {
+	if count > 0 {
 		return randomMessage(h.msgWarnings), false
 	}
 	return "", false

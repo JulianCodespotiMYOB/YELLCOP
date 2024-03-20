@@ -130,7 +130,7 @@ func (h *handler) Invoke(ctx context.Context, b []byte) ([]byte, error) {
 		log.Println("URL verification successful")
 		return asLFUR(r.Challenge, 200)
 
-	case slackevents.Cal lbackEvent:
+	case slackevents.CallbackEvent:
 		switch m := event.InnerEvent.Data.(type) {
 		case *slackevents.MessageEvent:
 			h.log.Debug(m.Text, zap.String("type", m.ChannelType), zap.String("user", m.User))
